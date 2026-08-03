@@ -181,7 +181,11 @@ app.patch('/api/groups/:id/work', async (req, res) => {
       SET
         doing = v.doing,
         done = v.done,
-        updated_at = ${now}::timestamptz
+        updated_at = CASE
+          WHEN m.doing IS DISTINCT FROM v.doing OR m.done IS DISTINCT FROM v.done
+          THEN ${now}::timestamptz
+          ELSE m.updated_at
+        END
       FROM (
         SELECT
           unnest(${ids}::uuid[]) AS id,
@@ -191,9 +195,23 @@ app.patch('/api/groups/:id/work', async (req, res) => {
       WHERE m.id = v.id AND m.group_id = ${id}
     `;
 
-    await sql`UPDATE groups SET updated_at = ${now} WHERE id = ${id}`;
+    await sql`
+      UPDATE groups SET updated_at = ${now}
+      WHERE id = ${id}
+        AND EXISTS (
+          SELECT 1 FROM members AS m
+          INNER JOIN (
+            SELECT
+              unnest(${ids}::uuid[]) AS id,
+              unnest(${doings}::text[]) AS doing,
+              unnest(${dones}::text[]) AS done
+          ) AS v ON m.id = v.id
+          WHERE m.group_id = ${id}
+            AND (m.doing IS DISTINCT FROM v.doing OR m.done IS DISTINCT FROM v.done)
+        )
+    `;
 
-    res.json({ ok: true, updatedAt: now, memberIds: ids });
+    res.json({ ok: true, updatedAt: now });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });

@@ -418,12 +418,17 @@ async function saveProgress() {
   if (!group) return;
 
   const updates = [];
+  let anyChanged = false;
+
   progressList.querySelectorAll('.progress-row').forEach((row) => {
-    updates.push({
-      id: row.dataset.memberId,
-      doing: row.querySelector('.work-doing-input').value.trim(),
-      done: row.querySelector('.work-done-input').value.trim()
-    });
+    const id = row.dataset.memberId;
+    const doing = row.querySelector('.work-doing-input').value.trim();
+    const done = row.querySelector('.work-done-input').value.trim();
+    const member = group.members.find((m) => m.id === id);
+    const changed = member && (member.doing !== doing || member.done !== done);
+
+    if (changed) anyChanged = true;
+    updates.push({ id, doing, done, changed });
   });
 
   updates.forEach((u) => {
@@ -431,10 +436,11 @@ async function saveProgress() {
     if (member) {
       member.doing = u.doing;
       member.done = u.done;
-      member.updatedAt = new Date().toISOString();
+      if (u.changed) member.updatedAt = new Date().toISOString();
     }
   });
-  group.updatedAt = new Date().toISOString();
+
+  if (anyChanged) group.updatedAt = new Date().toISOString();
 
   const groupId = progressGroupId;
   progressGroupId = null;
@@ -445,7 +451,7 @@ async function saveProgress() {
   try {
     await api(`/groups/${groupId}/work`, {
       method: 'PATCH',
-      body: JSON.stringify({ members: updates })
+      body: JSON.stringify({ members: updates.map(({ id, doing, done }) => ({ id, doing, done })) })
     });
     hideDbError();
   } catch (err) {
