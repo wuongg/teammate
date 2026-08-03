@@ -4,6 +4,7 @@ let deletingId = null;
 let progressGroupId = null;
 
 const CACHE_KEY = 'team-profiles-cache';
+const POLL_INTERVAL = 15000;
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -15,6 +16,10 @@ const emptyState = $('#emptyState');
 const membersList = $('#membersList');
 const progressList = $('#progressList');
 const dbBanner = $('#dbBanner');
+const syncDot = $('#syncDot');
+
+let pollTimer = null;
+let isSyncing = false;
 
 function uuid() {
   return crypto.randomUUID();
@@ -75,6 +80,52 @@ async function refreshGroups() {
 async function loadGroups() {
   groups = normalizeGroups(await api('/groups'));
   saveCache();
+}
+
+function groupsSnapshot() {
+  return JSON.stringify(groups);
+}
+
+function isModalOpen() {
+  return groupModal.open || progressModal.open || deleteModal.open;
+}
+
+function setSyncState(state) {
+  if (!syncDot) return;
+  syncDot.classList.remove('syncing', 'error');
+  if (state === 'syncing') syncDot.classList.add('syncing');
+  if (state === 'error') syncDot.classList.add('error');
+}
+
+async function syncInBackground() {
+  if (isSyncing || isModalOpen() || document.hidden) return;
+
+  isSyncing = true;
+  setSyncState('syncing');
+
+  try {
+    const before = groupsSnapshot();
+    await loadGroups();
+    hideDbError();
+    if (before !== groupsSnapshot()) renderGroups();
+    setSyncState('idle');
+  } catch {
+    setSyncState('error');
+  } finally {
+    isSyncing = false;
+  }
+}
+
+function startPolling() {
+  stopPolling();
+  pollTimer = setInterval(syncInBackground, POLL_INTERVAL);
+}
+
+function stopPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
 }
 
 function upsertGroup(saved) {
@@ -503,6 +554,14 @@ function bindEvents() {
   progressModal.addEventListener('click', (e) => {
     if (e.target === progressModal) progressModal.close();
   });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopPolling();
+    else {
+      startPolling();
+      syncInBackground();
+    }
+  });
 }
 
 async function init() {
@@ -517,7 +576,10 @@ async function init() {
   } catch (err) {
     if (!hasCache) showDbError(err.message);
     else renderGroups();
+    setSyncState('error');
   }
+
+  startPolling();
 }
 
 init();

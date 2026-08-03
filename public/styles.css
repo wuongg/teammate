@@ -101,6 +101,32 @@ body {
   font-size: 0.72rem;
   color: var(--text-muted);
   letter-spacing: 0.03em;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.sync-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--lead);
+  box-shadow: 0 0 6px var(--lead);
+  flex-shrink: 0;
+}
+
+.sync-dot.syncing {
+  animation: syncPulse 0.8s ease infinite;
+}
+
+.sync-dot.error {
+  background: var(--danger);
+  box-shadow: 0 0 6px var(--danger);
+}
+
+@keyframes syncPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.85); }
 }
 
 /* Buttons */
