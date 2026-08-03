@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Team Profile — Quản lý nhóm</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Sora:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="grain"></div>
+  <div class="db-banner" id="dbBanner" hidden></div>
+
+  <header class="header">
+    <div class="header-inner">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+        </div>
+        <div>
+          <h1>Team Profile</h1>
+          <p class="tagline">Tạo nhóm · Phân vai · Chọn lead</p>
+        </div>
+      </div>
+      <button type="button" class="btn btn-primary" id="btnNewGroup">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+        Tạo nhóm mới
+      </button>
+    </div>
+  </header>
+
+  <main class="main">
+    <div class="empty-state" id="emptyState">
+      <div class="empty-icon">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+          <circle cx="9" cy="7" r="4"/>
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+          <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+        </svg>
+      </div>
+      <h2>Chưa có nhóm nào</h2>
+      <p>Bắt đầu bằng cách tạo nhóm đầu tiên — đặt tên, thêm thành viên, ghi vai trò và chọn lead.</p>
+      <button type="button" class="btn btn-primary" id="btnEmptyCreate">Tạo nhóm đầu tiên</button>
+    </div>
+
+    <div class="groups-grid" id="groupsGrid"></div>
+  </main>
+
+  <dialog class="modal" id="groupModal">
+    <form class="modal-form" id="groupForm">
+      <div class="modal-top">
+        <div class="modal-header">
+          <div>
+            <p class="modal-eyebrow" id="modalEyebrow">Nhóm mới</p>
+            <h2 id="modalTitle">Tạo nhóm</h2>
+          </div>
+          <button type="button" class="btn-close" id="btnCloseModal" aria-label="Đóng">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+
+        <div class="modal-body">
+          <div class="form-grid">
+            <label class="field field-full">
+              <span class="field-label">Tên nhóm <em>*</em></span>
+              <input type="text" id="groupName" required placeholder="Nhóm Alpha, Team Backend...">
+            </label>
+            <label class="field field-full">
+              <span class="field-label">Mô tả</span>
+              <textarea id="groupDesc" rows="2" placeholder="Mục tiêu hoặc dự án của nhóm..."></textarea>
+            </label>
+          </div>
+
+          <div class="members-section">
+            <div class="section-head">
+              <div>
+                <h3>Thành viên</h3>
+                <p class="section-hint">Chọn một người làm trưởng nhóm</p>
+              </div>
+            </div>
+            <div class="members-list" id="membersList"></div>
+            <button type="button" class="btn-add-member" id="btnAddMember">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+              Thêm thành viên
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" id="btnCancel">Hủy</button>
+        <button type="submit" class="btn btn-primary">Lưu nhóm</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="modal" id="progressModal">
+    <div class="modal-form">
+      <div class="modal-top">
+        <div class="modal-header">
+          <div>
+            <p class="modal-eyebrow">Cập nhật công việc</p>
+            <h2 id="progressModalTitle">Nhóm</h2>
+          </div>
+          <button type="button" class="btn-close" id="btnCloseProgress" aria-label="Đóng">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p class="progress-hint">Ghi công việc đang làm và đã hoàn thành của từng thành viên</p>
+          <div class="progress-list" id="progressList"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" id="btnCancelProgress">Hủy</button>
+        <button type="button" class="btn btn-primary" id="btnSaveProgress">Lưu công việc</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog class="modal modal-sm" id="deleteModal">
+    <div class="modal-top">
+      <div class="modal-header">
+        <div>
+          <p class="modal-eyebrow">Xác nhận</p>
+          <h2>Xóa nhóm?</h2>
+        </div>
+        <button type="button" class="btn-close" id="btnCloseDelete" aria-label="Đóng">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <p class="delete-msg">Hành động này không thể hoàn tác. Toàn bộ thành viên sẽ bị xóa.</p>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-ghost" id="btnCancelDelete">Hủy</button>
+      <button type="button" class="btn btn-danger" id="btnConfirmDelete">Xóa nhóm</button>
+    </div>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
