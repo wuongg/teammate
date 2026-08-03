@@ -3,6 +3,8 @@ let editingId = null;
 let deletingId = null;
 let progressGroupId = null;
 
+const CACHE_KEY = 'team-profiles-cache';
+
 const $ = (sel) => document.querySelector(sel);
 
 const groupModal = $('#groupModal');
@@ -38,9 +40,23 @@ function hideDbError() {
   if (dbBanner) dbBanner.hidden = true;
 }
 
-async function loadGroups() {
-  groups = await api('/groups');
-  groups = groups.map((g) => ({
+function loadFromCache() {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return false;
+    groups = JSON.parse(raw);
+    return groups.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+function saveCache() {
+  localStorage.setItem(CACHE_KEY, JSON.stringify(groups));
+}
+
+function normalizeGroups(data) {
+  return data.map((g) => ({
     ...g,
     members: (g.members || []).map((m) => ({
       ...m,
@@ -48,6 +64,17 @@ async function loadGroups() {
       done: m.done ?? ''
     }))
   }));
+}
+
+async function refreshGroups() {
+  groups = normalizeGroups(await api('/groups'));
+  saveCache();
+  renderGroups();
+}
+
+async function loadGroups() {
+  groups = normalizeGroups(await api('/groups'));
+  saveCache();
 }
 
 function upsertGroup(saved) {
@@ -58,18 +85,6 @@ function upsertGroup(saved) {
 
 function removeGroup(id) {
   groups = groups.filter((g) => g.id !== id);
-}
-
-function setButtonLoading(btn, loading, label = 'Đang lưu...') {
-  if (!btn) return;
-  if (loading) {
-    btn.dataset.label = btn.textContent;
-    btn.textContent = label;
-    btn.disabled = true;
-  } else {
-    btn.textContent = btn.dataset.label || btn.textContent;
-    btn.disabled = false;
-  }
 }
 
 function getInitials(name) {
@@ -318,30 +333,41 @@ async function saveProgress() {
 
   const updates = [];
   progressList.querySelectorAll('.progress-row').forEach((row) => {
-    const memberId = row.dataset.memberId;
     updates.push({
-      id: memberId,
+      id: row.dataset.memberId,
       doing: row.querySelector('.work-doing-input').value.trim(),
       done: row.querySelector('.work-done-input').value.trim()
     });
   });
 
-  const btn = $('#btnSaveProgress');
-  setButtonLoading(btn, true, 'Đang lưu...');
+  updates.forEach((u) => {
+    const member = group.members.find((m) => m.id === u.id);
+    if (member) {
+      member.doing = u.doing;
+      member.done = u.done;
+    }
+  });
+  group.updatedAt = new Date().toISOString();
+
+  const groupId = progressGroupId;
+  progressGroupId = null;
+  saveCache();
+  renderGroups();
+  progressModal.close();
 
   try {
-    const saved = await api(`/groups/${progressGroupId}/work`, {
+    await api(`/groups/${groupId}/work`, {
       method: 'PATCH',
       body: JSON.stringify({ members: updates })
     });
-    upsertGroup(saved);
-    renderGroups();
-    progressGroupId = null;
-    progressModal.close();
+    hideDbError();
   } catch (err) {
-    alert(err.message);
-  } finally {
-    setButtonLoading(btn, false);
+    alert(`Lưu thất bại: ${err.message}`);
+    try {
+      await refreshGroups();
+    } catch {
+      showDbError(err.message);
+    }
   }
 }
 
@@ -392,47 +418,62 @@ async function handleFormSubmit(e) {
   if (!name) return;
 
   const members = collectMembersFromForm();
+  const now = new Date().toISOString();
+  const wasEditing = editingId;
   const data = {
     id: editingId || uuid(),
     name,
     description: $('#groupDesc').value.trim(),
-    members
+    members,
+    createdAt: wasEditing ? groups.find((g) => g.id === wasEditing)?.createdAt || now : now,
+    updatedAt: now
   };
 
-  const btn = $('#groupForm').querySelector('[type="submit"]');
-  setButtonLoading(btn, true);
+  upsertGroup(data);
+  saveCache();
+  renderGroups();
+  groupModal.close();
+  editingId = null;
 
   try {
-    const saved = editingId
-      ? await api(`/groups/${editingId}`, { method: 'PUT', body: JSON.stringify(data) })
+    const saved = wasEditing
+      ? await api(`/groups/${wasEditing}`, { method: 'PUT', body: JSON.stringify(data) })
       : await api('/groups', { method: 'POST', body: JSON.stringify(data) });
 
     upsertGroup(saved);
+    saveCache();
     renderGroups();
-    groupModal.close();
+    hideDbError();
   } catch (err) {
-    alert(err.message);
-  } finally {
-    setButtonLoading(btn, false);
+    alert(`Lưu thất bại: ${err.message}`);
+    try {
+      await refreshGroups();
+    } catch {
+      showDbError(err.message);
+    }
   }
 }
 
 async function confirmDelete() {
   if (!deletingId) return;
 
-  const btn = $('#btnConfirmDelete');
-  setButtonLoading(btn, true, 'Đang xóa...');
+  const id = deletingId;
+  removeGroup(id);
+  saveCache();
+  renderGroups();
+  deletingId = null;
+  deleteModal.close();
 
   try {
-    await api(`/groups/${deletingId}`, { method: 'DELETE' });
-    removeGroup(deletingId);
-    renderGroups();
-    deletingId = null;
-    deleteModal.close();
+    await api(`/groups/${id}`, { method: 'DELETE' });
+    hideDbError();
   } catch (err) {
-    alert(err.message);
-  } finally {
-    setButtonLoading(btn, false);
+    alert(`Xóa thất bại: ${err.message}`);
+    try {
+      await refreshGroups();
+    } catch {
+      showDbError(err.message);
+    }
   }
 }
 
@@ -466,13 +507,16 @@ function bindEvents() {
 
 async function init() {
   bindEvents();
+  const hasCache = loadFromCache();
+  if (hasCache) renderGroups();
+
   try {
     await loadGroups();
     hideDbError();
     renderGroups();
   } catch (err) {
-    showDbError(err.message);
-    renderGroups();
+    if (!hasCache) showDbError(err.message);
+    else renderGroups();
   }
 }
 

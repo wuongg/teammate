@@ -1,4 +1,6 @@
-import { neon } from '@neondatabase/serverless';
+import { neon, neonConfig } from '@neondatabase/serverless';
+
+neonConfig.fetchConnectionCache = true;
 
 let sql;
 

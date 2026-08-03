@@ -10,20 +10,7 @@ const PORT = process.env.PORT || 3000;
 
 let dbReady = false;
 
-async function ensureDb(_req, res, next) {
-  try {
-    if (!dbReady) {
-      await initDb();
-      dbReady = true;
-    }
-    next();
-  } catch (err) {
-    res.status(503).json({ error: err.message });
-  }
-}
-
 app.use(express.json());
-app.use('/api', ensureDb);
 
 app.get('/api/health', async (_req, res) => {
   try {
@@ -165,39 +152,33 @@ app.patch('/api/groups/:id/work', async (req, res) => {
     const { id } = req.params;
     const { members } = req.body;
 
-    if (!Array.isArray(members)) {
+    if (!Array.isArray(members) || !members.length) {
       return res.status(400).json({ error: 'Dữ liệu thành viên không hợp lệ' });
     }
 
     const sql = getDb();
     const now = new Date().toISOString();
+    const ids = members.map((m) => m.id);
+    const doings = members.map((m) => m.doing?.trim() || '');
+    const dones = members.map((m) => m.done?.trim() || '');
 
-    await Promise.all(
-      members.map((m) =>
-        sql`
-          UPDATE members
-          SET doing = ${m.doing?.trim() || ''}, done = ${m.done?.trim() || ''}
-          WHERE id = ${m.id} AND group_id = ${id}
-        `
-      )
-    );
+    await sql`
+      UPDATE members AS m
+      SET
+        doing = v.doing,
+        done = v.done
+      FROM (
+        SELECT
+          unnest(${ids}::uuid[]) AS id,
+          unnest(${doings}::text[]) AS doing,
+          unnest(${dones}::text[]) AS done
+      ) AS v
+      WHERE m.id = v.id AND m.group_id = ${id}
+    `;
 
     await sql`UPDATE groups SET updated_at = ${now} WHERE id = ${id}`;
 
-    const [groupRow] = await sql`
-      SELECT id, name, description, created_at, updated_at FROM groups WHERE id = ${id}
-    `;
-
-    if (!groupRow) {
-      return res.status(404).json({ error: 'Không tìm thấy nhóm' });
-    }
-
-    const memberRows = await sql`
-      SELECT id, group_id, name, role, is_lead, doing, done, sort_order
-      FROM members WHERE group_id = ${id} ORDER BY sort_order ASC
-    `;
-
-    res.json(mapGroupRow(groupRow, memberRows));
+    res.json({ ok: true, updatedAt: now });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
