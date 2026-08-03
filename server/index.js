@@ -2,7 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { getDb, initDb, mapGroupRow } from './db.js';
+import { getDb, initDb, mapGroupRow, buildGroupFromInput } from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -38,30 +38,39 @@ app.get('/api/health', async (_req, res) => {
 app.get('/api/groups', async (_req, res) => {
   try {
     const sql = getDb();
-    const groupRows = await sql`
-      SELECT id, name, description, created_at, updated_at
-      FROM groups
-      ORDER BY updated_at DESC
+    const rows = await sql`
+      SELECT
+        g.id,
+        g.name,
+        g.description,
+        g.created_at,
+        g.updated_at,
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'id', m.id,
+              'name', m.name,
+              'role', m.role,
+              'is_lead', m.is_lead,
+              'doing', m.doing,
+              'done', m.done,
+              'sort_order', m.sort_order
+            )
+            ORDER BY m.sort_order
+          ) FILTER (WHERE m.id IS NOT NULL),
+          '[]'::json
+        ) AS members
+      FROM groups g
+      LEFT JOIN members m ON m.group_id = g.id
+      GROUP BY g.id
+      ORDER BY g.updated_at DESC
     `;
 
-    if (!groupRows.length) {
-      return res.json([]);
-    }
-
-    const memberRows = await sql`
-      SELECT id, group_id, name, role, is_lead, doing, done, sort_order
-      FROM members
-      WHERE group_id = ANY(${groupRows.map((g) => g.id)})
-      ORDER BY sort_order ASC
-    `;
-
-    const membersByGroup = memberRows.reduce((acc, row) => {
-      if (!acc[row.group_id]) acc[row.group_id] = [];
-      acc[row.group_id].push(row);
-      return acc;
-    }, {});
-
-    res.json(groupRows.map((g) => mapGroupRow(g, membersByGroup[g.id] || [])));
+    res.json(
+      rows.map((row) =>
+        mapGroupRow(row, (row.members || []).sort((a, b) => a.sort_order - b.sort_order))
+      )
+    );
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -78,7 +87,10 @@ app.post('/api/groups', async (req, res) => {
     const sql = getDb();
     const id = group.id || crypto.randomUUID();
     const now = new Date().toISOString();
-    const members = normalizeMembers(group.members);
+    const members = normalizeMembers(group.members).map((m) => ({
+      ...m,
+      id: m.id || crypto.randomUUID()
+    }));
 
     await sql`
       INSERT INTO groups (id, name, description, created_at, updated_at)
@@ -87,15 +99,18 @@ app.post('/api/groups', async (req, res) => {
 
     await insertMembers(sql, id, members);
 
-    const [created] = await sql`
-      SELECT id, name, description, created_at, updated_at FROM groups WHERE id = ${id}
-    `;
-    const memberRows = await sql`
-      SELECT id, group_id, name, role, is_lead, doing, done, sort_order
-      FROM members WHERE group_id = ${id} ORDER BY sort_order ASC
-    `;
-
-    res.status(201).json(mapGroupRow(created, memberRows));
+    res.status(201).json(
+      buildGroupFromInput(
+        {
+          id,
+          name: group.name.trim(),
+          description: group.description?.trim() || '',
+          created_at: now,
+          updated_at: now
+        },
+        members
+      )
+    );
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -112,7 +127,10 @@ app.put('/api/groups/:id', async (req, res) => {
 
     const sql = getDb();
     const now = new Date().toISOString();
-    const members = normalizeMembers(group.members);
+    const members = normalizeMembers(group.members).map((m) => ({
+      ...m,
+      id: m.id || crypto.randomUUID()
+    }));
 
     const updated = await sql`
       UPDATE groups
@@ -130,12 +148,56 @@ app.put('/api/groups/:id', async (req, res) => {
     await sql`DELETE FROM members WHERE group_id = ${id}`;
     await insertMembers(sql, id, members);
 
+    res.json(
+      buildGroupFromInput(
+        { ...updated[0], updated_at: now },
+        members
+      )
+    );
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch('/api/groups/:id/work', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { members } = req.body;
+
+    if (!Array.isArray(members)) {
+      return res.status(400).json({ error: 'Dữ liệu thành viên không hợp lệ' });
+    }
+
+    const sql = getDb();
+    const now = new Date().toISOString();
+
+    await Promise.all(
+      members.map((m) =>
+        sql`
+          UPDATE members
+          SET doing = ${m.doing?.trim() || ''}, done = ${m.done?.trim() || ''}
+          WHERE id = ${m.id} AND group_id = ${id}
+        `
+      )
+    );
+
+    await sql`UPDATE groups SET updated_at = ${now} WHERE id = ${id}`;
+
+    const [groupRow] = await sql`
+      SELECT id, name, description, created_at, updated_at FROM groups WHERE id = ${id}
+    `;
+
+    if (!groupRow) {
+      return res.status(404).json({ error: 'Không tìm thấy nhóm' });
+    }
+
     const memberRows = await sql`
       SELECT id, group_id, name, role, is_lead, doing, done, sort_order
       FROM members WHERE group_id = ${id} ORDER BY sort_order ASC
     `;
 
-    res.json(mapGroupRow(updated[0], memberRows));
+    res.json(mapGroupRow(groupRow, memberRows));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -181,22 +243,25 @@ function normalizeMembers(members = []) {
 }
 
 async function insertMembers(sql, groupId, members) {
-  for (let i = 0; i < members.length; i++) {
-    const m = members[i];
-    await sql`
-      INSERT INTO members (id, group_id, name, role, is_lead, doing, done, sort_order)
-      VALUES (
-        ${m.id || crypto.randomUUID()},
-        ${groupId},
-        ${m.name.trim()},
-        ${m.role?.trim() || ''},
-        ${!!m.isLead},
-        ${m.doing?.trim() || ''},
-        ${m.done?.trim() || ''},
-        ${i}
-      )
-    `;
-  }
+  if (!members.length) return;
+
+  await Promise.all(
+    members.map((m, i) =>
+      sql`
+        INSERT INTO members (id, group_id, name, role, is_lead, doing, done, sort_order)
+        VALUES (
+          ${m.id},
+          ${groupId},
+          ${m.name.trim()},
+          ${m.role?.trim() || ''},
+          ${!!m.isLead},
+          ${m.doing?.trim() || ''},
+          ${m.done?.trim() || ''},
+          ${i}
+        )
+      `
+    )
+  );
 }
 
 async function start() {

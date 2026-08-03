@@ -62,3 +62,21 @@ export function mapMemberRow(row) {
     done: row.done || ''
   };
 }
+
+export function buildGroupFromInput(groupRow, members) {
+  return {
+    id: groupRow.id,
+    name: groupRow.name,
+    description: groupRow.description || '',
+    createdAt: groupRow.created_at,
+    updatedAt: groupRow.updated_at,
+    members: members.map((m, i) => ({
+      id: m.id,
+      name: m.name.trim(),
+      role: m.role?.trim() || '',
+      isLead: !!m.isLead,
+      doing: m.doing?.trim() || '',
+      done: m.done?.trim() || ''
+    }))
+  };
+}

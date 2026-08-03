@@ -50,6 +50,28 @@ async function loadGroups() {
   }));
 }
 
+function upsertGroup(saved) {
+  const idx = groups.findIndex((g) => g.id === saved.id);
+  if (idx === -1) groups.unshift(saved);
+  else groups[idx] = saved;
+}
+
+function removeGroup(id) {
+  groups = groups.filter((g) => g.id !== id);
+}
+
+function setButtonLoading(btn, loading, label = 'Đang lưu...') {
+  if (!btn) return;
+  if (loading) {
+    btn.dataset.label = btn.textContent;
+    btn.textContent = label;
+    btn.disabled = true;
+  } else {
+    btn.textContent = btn.dataset.label || btn.textContent;
+    btn.disabled = false;
+  }
+}
+
 function getInitials(name) {
   return name
     .split(/\s+/)
@@ -294,28 +316,32 @@ async function saveProgress() {
   const group = groups.find((g) => g.id === progressGroupId);
   if (!group) return;
 
+  const updates = [];
   progressList.querySelectorAll('.progress-row').forEach((row) => {
     const memberId = row.dataset.memberId;
-    const doing = row.querySelector('.work-doing-input').value.trim();
-    const done = row.querySelector('.work-done-input').value.trim();
-    const member = group.members.find((m) => m.id === memberId);
-    if (member) {
-      member.doing = doing;
-      member.done = done;
-    }
+    updates.push({
+      id: memberId,
+      doing: row.querySelector('.work-doing-input').value.trim(),
+      done: row.querySelector('.work-done-input').value.trim()
+    });
   });
 
+  const btn = $('#btnSaveProgress');
+  setButtonLoading(btn, true, 'Đang lưu...');
+
   try {
-    await api(`/groups/${progressGroupId}`, {
-      method: 'PUT',
-      body: JSON.stringify(group)
+    const saved = await api(`/groups/${progressGroupId}/work`, {
+      method: 'PATCH',
+      body: JSON.stringify({ members: updates })
     });
-    await loadGroups();
+    upsertGroup(saved);
     renderGroups();
     progressGroupId = null;
     progressModal.close();
   } catch (err) {
     alert(err.message);
+  } finally {
+    setButtonLoading(btn, false);
   }
 }
 
@@ -373,31 +399,40 @@ async function handleFormSubmit(e) {
     members
   };
 
+  const btn = $('#groupForm').querySelector('[type="submit"]');
+  setButtonLoading(btn, true);
+
   try {
-    if (editingId) {
-      await api(`/groups/${editingId}`, { method: 'PUT', body: JSON.stringify(data) });
-    } else {
-      await api('/groups', { method: 'POST', body: JSON.stringify(data) });
-    }
-    await loadGroups();
+    const saved = editingId
+      ? await api(`/groups/${editingId}`, { method: 'PUT', body: JSON.stringify(data) })
+      : await api('/groups', { method: 'POST', body: JSON.stringify(data) });
+
+    upsertGroup(saved);
     renderGroups();
     groupModal.close();
   } catch (err) {
     alert(err.message);
+  } finally {
+    setButtonLoading(btn, false);
   }
 }
 
 async function confirmDelete() {
   if (!deletingId) return;
 
+  const btn = $('#btnConfirmDelete');
+  setButtonLoading(btn, true, 'Đang xóa...');
+
   try {
     await api(`/groups/${deletingId}`, { method: 'DELETE' });
-    await loadGroups();
+    removeGroup(deletingId);
     renderGroups();
     deletingId = null;
     deleteModal.close();
   } catch (err) {
     alert(err.message);
+  } finally {
+    setButtonLoading(btn, false);
   }
 }
 
@@ -432,9 +467,8 @@ function bindEvents() {
 async function init() {
   bindEvents();
   try {
-    await api('/health');
-    hideDbError();
     await loadGroups();
+    hideDbError();
     renderGroups();
   } catch (err) {
     showDbError(err.message);
