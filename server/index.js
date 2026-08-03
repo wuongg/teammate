@@ -10,7 +10,20 @@ const PORT = process.env.PORT || 3000;
 
 let dbReady = false;
 
+async function ensureDb(_req, res, next) {
+  try {
+    if (!dbReady) {
+      await initDb();
+      dbReady = true;
+    }
+    next();
+  } catch (err) {
+    res.status(503).json({ error: err.message });
+  }
+}
+
 app.use(express.json());
+app.use('/api', ensureDb);
 
 app.get('/api/health', async (_req, res) => {
   try {
