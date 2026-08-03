@@ -66,9 +66,41 @@ function normalizeGroups(data) {
     members: (g.members || []).map((m) => ({
       ...m,
       doing: m.doing ?? '',
-      done: m.done ?? ''
+      done: m.done ?? '',
+      updatedAt: m.updatedAt || null
     }))
   }));
+}
+
+function formatUpdatedAt(iso) {
+  if (!iso) return 'Chưa cập nhật';
+
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return 'Chưa cập nhật';
+
+  const diffMs = Date.now() - date.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  const diffHour = Math.floor(diffMs / 3600000);
+  const diffDay = Math.floor(diffMs / 86400000);
+
+  if (diffMin < 1) return 'Vừa xong';
+  if (diffMin < 60) return `${diffMin} phút trước`;
+  if (diffHour < 24) return `${diffHour} giờ trước`;
+  if (diffDay === 1) return 'Hôm qua';
+
+  return date.toLocaleString('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
+
+function getLatestMemberUpdate(members) {
+  const times = members.map((m) => m.updatedAt).filter(Boolean);
+  if (!times.length) return null;
+  return times.sort((a, b) => new Date(b) - new Date(a))[0];
 }
 
 async function refreshGroups() {
@@ -152,6 +184,7 @@ function renderGroups() {
 
   groups.forEach((group, index) => {
     const lead = group.members.find((m) => m.isLead);
+    const latestUpdate = getLatestMemberUpdate(group.members);
     const card = document.createElement('article');
     card.className = 'group-card';
     card.style.animationDelay = `${index * 0.08}s`;
@@ -176,6 +209,7 @@ function renderGroups() {
                 <span class="work-text">${m.done ? escapeHtml(m.done) : '—'}</span>
               </div>
             </div>
+            <div class="member-updated">${formatUpdatedAt(m.updatedAt)}</div>
           </div>
           ${m.isLead ? '<span class="lead-badge">Lead</span>' : ''}
         </div>`
@@ -196,7 +230,7 @@ function renderGroups() {
         </div>
       </div>
       <div class="members-preview">
-        <h4>Thành viên (${group.members.length})${lead ? ` · Lead: ${escapeHtml(lead.name)}` : ''}</h4>
+        <h4>Thành viên (${group.members.length})${lead ? ` · Lead: ${escapeHtml(lead.name)}` : ''}${latestUpdate ? ` · Gần nhất: ${formatUpdatedAt(latestUpdate)}` : ''}</h4>
         ${membersHtml}
       </div>`;
 
@@ -358,6 +392,7 @@ function openProgressModal(id) {
           <div class="progress-row-info">
             <div class="member-name">${escapeHtml(member.name)}</div>
             <div class="member-role">${escapeHtml(member.role || '—')}${member.isLead ? ' · Lead' : ''}</div>
+            <div class="member-updated">${formatUpdatedAt(member.updatedAt)}</div>
           </div>
         </div>
         <label class="work-field">
@@ -396,6 +431,7 @@ async function saveProgress() {
     if (member) {
       member.doing = u.doing;
       member.done = u.done;
+      member.updatedAt = new Date().toISOString();
     }
   });
   group.updatedAt = new Date().toISOString();
@@ -445,7 +481,8 @@ function collectMembersFromForm() {
       role: row.querySelector('.member-role-input').value.trim(),
       isLead: row.querySelector('.member-lead-radio').checked,
       doing: existingMember?.doing ?? '',
-      done: existingMember?.done ?? ''
+      done: existingMember?.done ?? '',
+      updatedAt: existingMember?.updatedAt ?? null
     });
   });
 

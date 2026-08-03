@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS members (
   is_lead BOOLEAN DEFAULT FALSE,
   doing TEXT DEFAULT '',
   done TEXT DEFAULT '',
-  sort_order INTEGER DEFAULT 0
+  sort_order INTEGER DEFAULT 0,
+  updated_at TIMESTAMPTZ
 );
 
 CREATE INDEX IF NOT EXISTS idx_members_group_id ON members(group_id);

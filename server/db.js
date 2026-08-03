@@ -41,6 +41,10 @@ export async function initDb() {
   await db`
     CREATE INDEX IF NOT EXISTS idx_members_group_id ON members(group_id)
   `;
+
+  await db`
+    ALTER TABLE members ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ
+  `;
 }
 
 export function mapGroupRow(row, members) {
@@ -61,7 +65,8 @@ export function mapMemberRow(row) {
     role: row.role || '',
     isLead: row.is_lead,
     doing: row.doing || '',
-    done: row.done || ''
+    done: row.done || '',
+    updatedAt: row.updated_at || null
   };
 }
 
@@ -78,7 +83,8 @@ export function buildGroupFromInput(groupRow, members) {
       role: m.role?.trim() || '',
       isLead: !!m.isLead,
       doing: m.doing?.trim() || '',
-      done: m.done?.trim() || ''
+      done: m.done?.trim() || '',
+      updatedAt: m.updatedAt || null
     }))
   };
 }

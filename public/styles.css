@@ -371,6 +371,18 @@ body {
   word-break: break-word;
 }
 
+.member-updated {
+  margin-top: 0.35rem;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+
+.member-updated::before {
+  content: '⏱ ';
+  opacity: 0.7;
+}
+
 .no-members {
   color: var(--text-muted);
   font-size: 0.85rem;

@@ -41,7 +41,8 @@ app.get('/api/groups', async (_req, res) => {
               'is_lead', m.is_lead,
               'doing', m.doing,
               'done', m.done,
-              'sort_order', m.sort_order
+              'sort_order', m.sort_order,
+              'updated_at', m.updated_at
             )
             ORDER BY m.sort_order
           ) FILTER (WHERE m.id IS NOT NULL),
@@ -166,7 +167,8 @@ app.patch('/api/groups/:id/work', async (req, res) => {
       UPDATE members AS m
       SET
         doing = v.doing,
-        done = v.done
+        done = v.done,
+        updated_at = ${now}::timestamptz
       FROM (
         SELECT
           unnest(${ids}::uuid[]) AS id,
@@ -178,7 +180,7 @@ app.patch('/api/groups/:id/work', async (req, res) => {
 
     await sql`UPDATE groups SET updated_at = ${now} WHERE id = ${id}`;
 
-    res.json({ ok: true, updatedAt: now });
+    res.json({ ok: true, updatedAt: now, memberIds: ids });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -229,7 +231,7 @@ async function insertMembers(sql, groupId, members) {
   await Promise.all(
     members.map((m, i) =>
       sql`
-        INSERT INTO members (id, group_id, name, role, is_lead, doing, done, sort_order)
+        INSERT INTO members (id, group_id, name, role, is_lead, doing, done, sort_order, updated_at)
         VALUES (
           ${m.id},
           ${groupId},
@@ -238,7 +240,8 @@ async function insertMembers(sql, groupId, members) {
           ${!!m.isLead},
           ${m.doing?.trim() || ''},
           ${m.done?.trim() || ''},
-          ${i}
+          ${i},
+          ${m.updatedAt || null}
         )
       `
     )
